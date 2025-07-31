@@ -5,27 +5,33 @@ import io
 st.title("📄 Parser multi-pages - Offres Station F → Excel")
 
 # Initialisation des variables de session
+if "total_pages_expected" not in st.session_state:
+    st.session_state["total_pages_expected"] = 1
+
+if "pages_added" not in st.session_state:
+    st.session_state["pages_added"] = 0
+
 if "all_pages" not in st.session_state:
     st.session_state["all_pages"] = []
 
-if "buffer" not in st.session_state:
-    st.session_state["buffer"] = ""
+# Saisie du nombre de pages attendues (modifiable seulement si aucune page n'a été ajoutée)
+if st.session_state["pages_added"] == 0:
+    st.session_state["total_pages_expected"] = st.number_input(
+        "Combien de pages vas-tu coller ?", min_value=1, max_value=100, value=5, step=1
+    )
+else:
+    st.info(f"Nombre de pages prévues : {st.session_state['total_pages_expected']}")
 
-st.markdown("""
-Colle ici le contenu **d'une seule page** du jobboard Station F (format 3 lignes par offre)  
-➡️ Clique sur **“Ajouter cette page”**  
-🔁 Répète autant de fois que nécessaire  
-📥 Puis clique sur **“Télécharger Excel”** quand tu as fini  
-(💡 La zone de texte ne se vide plus automatiquement pour éviter un bug)
-""")
+# Affichage de la barre de progression
+progress = st.progress(st.session_state["pages_added"] / st.session_state["total_pages_expected"])
+st.caption(f"{st.session_state['pages_added']} / {st.session_state['total_pages_expected']} pages ajoutées")
 
-# Affichage de la zone de texte sans clé liée à session_state
+# Zone de texte pour coller une page
 raw_text = st.text_area("📋 Colle ici le texte brut d'une page :", height=300)
 
 def parse_three_line_jobs(text):
     lines = [line.strip() for line in text.strip().split('\n') if line.strip()]
     jobs = []
-
     for i in range(0, len(lines), 3):
         if i + 2 < len(lines):
             contrat_titre = lines[i]
@@ -46,21 +52,24 @@ def parse_three_line_jobs(text):
             })
     return jobs
 
-# Bouton d’ajout de la page
-if st.button("📄 Ajouter cette page"):
-    if raw_text.strip():
-        parsed = parse_three_line_jobs(raw_text)
-        st.session_state["all_pages"].extend(parsed)
-        st.success(f"{len(parsed)} offres ajoutées. Total : {len(st.session_state['all_pages'])}")
-        st.session_state["buffer"] = ""  # Ne sert que si tu veux vider ailleurs
+# Ajout de la page
+if st.session_state["pages_added"] < st.session_state["total_pages_expected"]:
+    if st.button("📄 Ajouter cette page"):
+        if raw_text.strip():
+            parsed = parse_three_line_jobs(raw_text)
+            st.session_state["all_pages"].extend(parsed)
+            st.session_state["pages_added"] += 1
+            st.success(f"{len(parsed)} offres ajoutées. Total cumulé : {len(st.session_state['all_pages'])}")
+            st.experimental_rerun()  # Pour rafraîchir la barre + vider zone
+else:
+    st.warning("✅ Tu as déjà ajouté toutes les pages prévues.")
 
-# Affichage du tableau complet
+# Affichage cumulatif
 if st.session_state["all_pages"]:
     df_all = pd.DataFrame(st.session_state["all_pages"])
     st.subheader("📊 Toutes les offres cumulées")
     st.dataframe(df_all)
 
-    # Téléchargement Excel
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
         df_all.to_excel(writer, index=False, sheet_name='Offres')
@@ -72,7 +81,9 @@ if st.session_state["all_pages"]:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-# Bouton pour tout réinitialiser
-if st.button("🔄 Réinitialiser toutes les pages"):
+# Réinitialiser tout
+if st.button("🔄 Réinitialiser tout"):
     st.session_state["all_pages"] = []
-    st.success("Toutes les données ont été réinitialisées.")
+    st.session_state["pages_added"] = 0
+    st.session_state["total_pages_expected"] = 1
+    st.success("Tout a été réinitialisé.")
