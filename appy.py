@@ -5,15 +5,22 @@ import re
 
 st.title("Y Combinator Startup List Parser - version flexible")
 
-# Initialisation de la base de données en session state
+# Initialisation des variables de session
 if 'data' not in st.session_state:
     st.session_state.data = pd.DataFrame(columns=[
         "Name", "Location", "Pitch", "Incubation Period", "Segments/Fields"
     ])
 
-# Gestion du texte d'entrée dans session_state
 if 'input_text' not in st.session_state:
     st.session_state['input_text'] = ''
+
+if 'clear_input' not in st.session_state:
+    st.session_state['clear_input'] = False
+
+# Si on a demandé de clear input, on vide et on reset le flag avant d'afficher le text_area
+if st.session_state['clear_input']:
+    st.session_state['input_text'] = ''
+    st.session_state['clear_input'] = False
 
 st.write("""
 Colle ici plusieurs startups à la suite.
@@ -30,7 +37,6 @@ startup_text = st.text_area(
 )
 
 def is_startup_header(line):
-    # Ligne contenant au moins 2 virgules = début d'une startup
     return line.count(",") >= 2
 
 def parse_startups_flexible(text):
@@ -116,8 +122,8 @@ with col1:
                 ignore_index=True
             )
             st.success(f"{len(parsed_list)} startups ajoutées avec succès.")
-            # On vide la zone de texte après ajout
-            st.session_state['input_text'] = ''
+            # Demande de vider l'input au prochain run
+            st.session_state['clear_input'] = True
 
 with col2:
     if st.button("Télécharger XLSX"):
