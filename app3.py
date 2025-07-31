@@ -1,80 +1,57 @@
 import streamlit as st
 import pandas as pd
-import re
-from io import BytesIO
+import io
 
-st.title("Parsing d'annonces B2B")
+st.title("📄 Parser Offres Station F → Excel (version 3 lignes)")
 
-# Initialisation de l'état de session
-if "num_pages" not in st.session_state:
-    st.session_state.num_pages = 1
-if "pages" not in st.session_state:
-    st.session_state.pages = [""] * st.session_state.num_pages
-if "parsed_data" not in st.session_state:
-    st.session_state.parsed_data = []
+st.markdown("""
+Colle ici le contenu copié du jobboard Station F (même plusieurs pages).  
+Chaque offre doit être sur **3 lignes consécutives** :
+1. Type de contrat + Intitulé du poste  
+2. Nom de la startup  
+3. Type de poste (Full-Time, Internship, etc)
+""")
 
-# Choix du nombre de pages
-num_pages = st.number_input("Nombre de pages que vous allez coller :", min_value=1, max_value=20, value=st.session_state.num_pages, step=1)
+raw_text = st.text_area("📋 Colle ici le texte brut :", height=400)
 
-# Mise à jour dynamique de pages si le nombre change
-if num_pages != st.session_state.num_pages:
-    st.session_state.num_pages = num_pages
-    st.session_state.pages = [""] * num_pages
+def parse_three_line_jobs(text):
+    lines = [line.strip() for line in text.strip().split('\n') if line.strip()]
+    jobs = []
 
-# Input des pages
-for i in range(st.session_state.num_pages):
-    st.session_state.pages[i] = st.text_area(f"Contenu de la page {i+1} :", value=st.session_state.pages[i], height=200)
+    for i in range(0, len(lines), 3):
+        if i + 2 < len(lines):
+            contrat_titre = lines[i]
+            startup = lines[i+1]
+            type_poste = lines[i+2]
 
-def parse_announcements(text):
-    # Nettoyage et séparation des blocs d'annonces
-    blocks = re.split(r"\n\s*\n", text.strip())
-    results = []
+            # Optionnel : séparer "CDI - Intitulé" en deux colonnes
+            if " - " in contrat_titre:
+                contrat, titre = contrat_titre.split(" - ", 1)
+            else:
+                contrat = ""
+                titre = contrat_titre
 
-    for block in blocks:
-        lines = [l.strip() for l in block.strip().split('\n') if l.strip()]
-        if len(lines) >= 3:
-            # Extraction
-            contrat_titre = lines[0]
-            startup = lines[1]
-            contrat_type = lines[2]
-            results.append({
-                "Type de contrat + Intitulé": contrat_titre,
+            jobs.append({
+                "Type de contrat": contrat.strip(),
+                "Titre du poste": titre.strip(),
                 "Startup": startup,
-                "Contrat (Full-time etc)": contrat_type
+                "Type de poste": type_poste
             })
-    return results
 
-# Traitement au clic
-if st.button("Lancer le parsing"):
-    all_data = []
-    total_pages = st.session_state.num_pages
+    return pd.DataFrame(jobs)
 
-    # Affiche la barre de progression
-    progress_bar = st.progress(0)
-    for i, page_text in enumerate(st.session_state.pages):
-        parsed = parse_announcements(page_text)
-        all_data.extend(parsed)
-        progress_bar.progress((i + 1) / total_pages)
+if raw_text:
+    df = parse_three_line_jobs(raw_text)
+    st.success(f"{len(df)} offres détectées !")
+    st.dataframe(df)
 
-    df = pd.DataFrame(all_data)
-    st.session_state.parsed_data = df
-    st.success(f"{len(df)} annonces extraites avec succès.")
-
-# Affichage des résultats si présents
-if isinstance(st.session_state.parsed_data, pd.DataFrame) and not st.session_state.parsed_data.empty:
-    st.subheader("Tableau des annonces extraites :")
-    st.dataframe(st.session_state.parsed_data)
-
-    # Téléchargement XLSX
-    def to_excel(df):
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Annonces')
-        return output.getvalue()
-
+    # Export en Excel
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Offres')
     st.download_button(
-        label="📥 Télécharger en .xlsx",
-        data=to_excel(st.session_state.parsed_data),
-        file_name="annonces_parsées.xlsx",
+        label="📥 Télécharger Excel",
+        data=buffer.getvalue(),
+        file_name="offres_stationf.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
