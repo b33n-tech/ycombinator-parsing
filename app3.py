@@ -8,8 +8,8 @@ st.title("📄 Parser multi-pages - Offres Station F → Excel")
 if "all_pages" not in st.session_state:
     st.session_state["all_pages"] = []
 
-if "text_input_page" not in st.session_state:
-    st.session_state["text_input_page"] = ""
+if "text_input_page_tmp" not in st.session_state:
+    st.session_state["text_input_page_tmp"] = ""
 
 st.markdown("""
 Colle ici le contenu **d'une seule page** du jobboard Station F (format 3 lignes par offre)  
@@ -18,10 +18,10 @@ Colle ici le contenu **d'une seule page** du jobboard Station F (format 3 lignes
 📥 Puis clique sur **“Télécharger Excel”** quand tu as fini
 """)
 
-# Zone de texte contrôlée par session
-raw_text = st.text_area("📋 Colle ici le texte brut d'une page :", 
-                        height=300, 
-                        key="text_input_page")
+# Affichage de la zone de texte
+text_input = st.text_area("📋 Colle ici le texte brut d'une page :", 
+                          height=300, 
+                          key="text_input_page_tmp")
 
 def parse_three_line_jobs(text):
     lines = [line.strip() for line in text.strip().split('\n') if line.strip()]
@@ -49,22 +49,24 @@ def parse_three_line_jobs(text):
 
 # Bouton d'ajout
 if st.button("📄 Ajouter cette page"):
-    if st.session_state.text_input_page.strip():
-        parsed = parse_three_line_jobs(st.session_state.text_input_page)
-        st.session_state.all_pages.extend(parsed)
-        st.success(f"{len(parsed)} offres ajoutées. Total : {len(st.session_state.all_pages)}")
-        st.session_state.text_input_page = ""  # On efface la zone de texte
+    if st.session_state["text_input_page_tmp"].strip():
+        parsed = parse_three_line_jobs(st.session_state["text_input_page_tmp"])
+        st.session_state["all_pages"].extend(parsed)
+        st.success(f"{len(parsed)} offres ajoutées. Total : {len(st.session_state['all_pages'])}")
 
-# Affichage de toutes les offres enregistrées
-if st.session_state.all_pages:
-    df_all = pd.DataFrame(st.session_state.all_pages)
+        # Forcer le champ à se vider (en remettant à blanc la session)
+        st.session_state["text_input_page_tmp"] = ""
+
+# Affichage des données cumulées
+if st.session_state["all_pages"]:
+    df_all = pd.DataFrame(st.session_state["all_pages"])
     st.subheader("📊 Toutes les offres cumulées")
     st.dataframe(df_all)
 
-    # Export Excel
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
         df_all.to_excel(writer, index=False, sheet_name='Offres')
+
     st.download_button(
         label="📥 Télécharger Excel",
         data=buffer.getvalue(),
@@ -72,7 +74,6 @@ if st.session_state.all_pages:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-# Reset complet
 if st.button("🔄 Réinitialiser toutes les pages"):
-    st.session_state.all_pages = []
+    st.session_state["all_pages"] = []
     st.success("Toutes les données ont été réinitialisées.")
