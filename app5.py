@@ -1,71 +1,55 @@
 import streamlit as st
 import pandas as pd
-import re
 
-st.title("🧠 Intelligent Startup Extractor - Founder Inc")
+# Liste complète des tags utilisés sur le site Founder Inc
+KNOWN_TAGS = {
+    "AI/ML", "Hardware", "Consumer", "Devtools", "Web3", "AR/VR", "Gaming", "B2B"
+}
+
+st.title("🚀 Scraper intelligent - Founder Inc. Portfolio")
 
 st.markdown("""
-Colle ci-dessous le contenu brut du site Founder Inc.
-L’outil détecte dynamiquement : **Nom**, **Tags**, **Pitch**
+Colle ici **le texte brut** du site [foundersinc.com/portfolio](https://foundersinc.com/portfolio) — l'outil extrait :
+- **Nom de la startup**
+- **Tags** (selon la liste complète intégrée)
+- **Pitch**
 """)
 
-raw_text = st.text_area("✂️ Collez le texte ici :", height=400)
+raw_text = st.text_area("📝 Copie le texte ici :", height=500)
 
-def is_probably_name(line):
-    # A name is usually capitalized and short (not a full sentence)
-    return bool(re.match(r"^[A-Z][a-zA-Z0-9&()\-\s']+$", line)) and len(line.split()) <= 4
-
-def is_probably_pitch(line):
-    return bool(re.search(r"[.!?]$", line)) or len(line.split()) > 5
-
-if st.button("🔍 Extraire"):
+if st.button("🔍 Extraire les startups"):
     lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
-    
     startups = []
-    current_name = None
-    current_tags = []
-    current_pitch = ""
-    
     i = 0
+
     while i < len(lines):
-        line = lines[i]
-
-        # Nouvelle startup détectée
-        if is_probably_name(line) and (i == 0 or is_probably_pitch(lines[i-1])):
-            if current_name:
-                # Sauvegarder le précédent projet
-                startups.append({
-                    "Startup Name": current_name,
-                    "Tags": ", ".join(current_tags),
-                    "Pitch": current_pitch
-                })
-            # Réinitialiser
-            current_name = line
-            current_tags = []
-            current_pitch = ""
-            i += 1
-            continue
-
-        # Si ligne ressemble à un tag
-        if not is_probably_pitch(line):
-            current_tags.append(line)
-        else:
-            current_pitch = line
-        
+        name = lines[i]
         i += 1
 
-    # Ajouter le dernier projet
-    if current_name:
-        startups.append({
-            "Startup Name": current_name,
-            "Tags": ", ".join(current_tags),
-            "Pitch": current_pitch
-        })
+        tags = []
+        # Collecter tous les tags consécutifs
+        while i < len(lines) and lines[i] in KNOWN_TAGS:
+            tags.append(lines[i])
+            i += 1
 
-    df = pd.DataFrame(startups)
-    st.success(f"{len(df)} startups extraites.")
-    st.dataframe(df)
+        # Pitch : la première ligne après les tags
+        pitch = lines[i] if i < len(lines) else ""
+        i += 1
 
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Télécharger en CSV", csv, "startups_founder_inc.csv", "text/csv")
+        # On vérifie que c'est bien une startup avec tag ou pitch pour ne pas enregistrer du bruit
+        if tags or pitch:
+            startups.append({
+                "Startup Name": name,
+                "Tags": ", ".join(tags),
+                "Pitch": pitch
+            })
 
+    if startups:
+        df = pd.DataFrame(startups)
+        st.success(f"{len(df)} startups extraites.")
+        st.dataframe(df)
+
+        csv = df.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Télécharger CSV", csv, "founder_portfolio.csv", "text/csv")
+    else:
+        st.warning("Aucune startup détectée. Vérifie le format et que tu as bien inclus les tags/pitchs.")
