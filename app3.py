@@ -4,24 +4,23 @@ import io
 
 st.title("📄 Parser multi-pages - Offres Station F → Excel")
 
-# Initialiser les sessions
+# Initialisation des variables de session
 if "all_pages" not in st.session_state:
     st.session_state["all_pages"] = []
 
-if "text_input_page_tmp" not in st.session_state:
-    st.session_state["text_input_page_tmp"] = ""
+if "buffer" not in st.session_state:
+    st.session_state["buffer"] = ""
 
 st.markdown("""
 Colle ici le contenu **d'une seule page** du jobboard Station F (format 3 lignes par offre)  
 ➡️ Clique sur **“Ajouter cette page”**  
 🔁 Répète autant de fois que nécessaire  
-📥 Puis clique sur **“Télécharger Excel”** quand tu as fini
+📥 Puis clique sur **“Télécharger Excel”** quand tu as fini  
+(💡 La zone de texte ne se vide plus automatiquement pour éviter un bug)
 """)
 
-# Affichage de la zone de texte
-text_input = st.text_area("📋 Colle ici le texte brut d'une page :", 
-                          height=300, 
-                          key="text_input_page_tmp")
+# Affichage de la zone de texte sans clé liée à session_state
+raw_text = st.text_area("📋 Colle ici le texte brut d'une page :", height=300)
 
 def parse_three_line_jobs(text):
     lines = [line.strip() for line in text.strip().split('\n') if line.strip()]
@@ -47,22 +46,21 @@ def parse_three_line_jobs(text):
             })
     return jobs
 
-# Bouton d'ajout
+# Bouton d’ajout de la page
 if st.button("📄 Ajouter cette page"):
-    if st.session_state["text_input_page_tmp"].strip():
-        parsed = parse_three_line_jobs(st.session_state["text_input_page_tmp"])
+    if raw_text.strip():
+        parsed = parse_three_line_jobs(raw_text)
         st.session_state["all_pages"].extend(parsed)
         st.success(f"{len(parsed)} offres ajoutées. Total : {len(st.session_state['all_pages'])}")
+        st.session_state["buffer"] = ""  # Ne sert que si tu veux vider ailleurs
 
-        # Forcer le champ à se vider (en remettant à blanc la session)
-        st.session_state["text_input_page_tmp"] = ""
-
-# Affichage des données cumulées
+# Affichage du tableau complet
 if st.session_state["all_pages"]:
     df_all = pd.DataFrame(st.session_state["all_pages"])
     st.subheader("📊 Toutes les offres cumulées")
     st.dataframe(df_all)
 
+    # Téléchargement Excel
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
         df_all.to_excel(writer, index=False, sheet_name='Offres')
@@ -74,6 +72,7 @@ if st.session_state["all_pages"]:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
+# Bouton pour tout réinitialiser
 if st.button("🔄 Réinitialiser toutes les pages"):
     st.session_state["all_pages"] = []
     st.success("Toutes les données ont été réinitialisées.")
