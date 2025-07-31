@@ -2,86 +2,60 @@ import streamlit as st
 import pandas as pd
 import io
 import re
+from time import sleep
 
-st.set_page_config(page_title="Parsing offres Station F", layout="wide")
+st.set_page_config(page_title="Parser Jobboard Station F", layout="centered")
 
-st.title("📄 Parser les offres à partir de ton copié-collé")
-
-# Initialisation des variables de session
-if "all_offers" not in st.session_state:
-    st.session_state.all_offers = []
-if "page_counter" not in st.session_state:
-    st.session_state.page_counter = 0
-if "finished" not in st.session_state:
-    st.session_state.finished = False
-if "total_pages" not in st.session_state:
-    st.session_state.total_pages = 3
-
-# Fonction pour parser une page
-def parse_page(text):
-    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
-    offers = []
-    i = 0
-    while i < len(lines) - 2:
-        contrat_poste = lines[i]
-        startup = lines[i + 1]
-        type_poste = lines[i + 2]
-        match = re.match(r"^(CDI|CDD|Stage|Alternance|Freelance|VIE|Internship|Apprentissage|Service civique|Volunteer)\s*-\s*(.*)", contrat_poste)
-        if match:
-            contrat = match.group(1)
-            poste = match.group(2)
-            offers.append({
-                "Contrat": contrat,
-                "Poste": poste,
-                "Startup": startup,
-                "Type": type_poste
-            })
-            i += 3
-        else:
-            i += 1
-    return offers
+st.title("📄 Parser des annonces de Station F")
 
 # Choix du nombre de pages
-if not st.session_state.finished:
-    st.session_state.total_pages = st.slider("Combien de pages vas-tu ajouter au total ?", 1, 20, st.session_state.total_pages)
+num_pages = st.number_input("Nombre de pages que vous souhaitez copier-coller :", min_value=1, step=1)
 
-# Ajout de contenu tant qu'on n'a pas terminé
-if not st.session_state.finished and st.session_state.page_counter < st.session_state.total_pages:
-    st.markdown(f"### Page {st.session_state.page_counter + 1} / {st.session_state.total_pages}")
-    user_input = st.text_area("Colle ici le texte de cette page :", key=f"input_page_{st.session_state.page_counter}")
-    if st.button("➕ Ajouter cette page", key=f"add_page_{st.session_state.page_counter}"):
-        st.session_state.all_offers.extend(parse_page(user_input))
-        st.session_state.page_counter += 1
+# Création d'un espace pour stocker les textes
+if "pages" not in st.session_state:
+    st.session_state.pages = [""] * num_pages
 
-# Affichage barre de progression
-progress = st.session_state.page_counter / st.session_state.total_pages
-st.progress(progress)
+# Affichage des zones de texte pour chaque page
+for i in range(num_pages):
+    st.session_state.pages[i] = st.text_area(f"Contenu de la page {i+1} :", value=st.session_state.pages[i], height=200)
 
-# Fin d'ajout
-if st.session_state.page_counter >= st.session_state.total_pages:
-    st.success("🎉 Tu as ajouté toutes les pages prévues.")
-    if st.button("✅ Passer à l'étape suivante"):
-        st.session_state.finished = True
+# Bouton pour lancer le parsing
+if st.button("📊 Lancer le parsing"):
+    annonces = []
+    total = len(st.session_state.pages)
+    progress_bar = st.progress(0)
 
-# Affichage du tableau + téléchargement
-if st.session_state.all_offers:
-    df = pd.DataFrame(st.session_state.all_offers)
-    st.subheader("📊 Résumé des offres collectées")
-    st.dataframe(df, use_container_width=True)
+    for idx, page in enumerate(st.session_state.pages):
+        # Nettoyage + séparation
+        blocks = re.split(r'\n\s*\n', page.strip())
 
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Offres")
-    output.seek(0)
+        for block in blocks:
+            lines = block.strip().split("\n")
+            if len(lines) >= 3:
+                # Ligne 1 : "CDI - Intitulé"
+                titre_type = lines[0].strip()
+                startup = lines[1].strip()
+                contrat = lines[2].strip()
+                annonces.append({
+                    "Titre": titre_type,
+                    "Startup": startup,
+                    "Contrat": contrat
+                })
 
-    st.download_button(
-        "📥 Télécharger en .xlsx",
-        output,
-        file_name="offres_stationf.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        progress_bar.progress((idx + 1) / total)
+        sleep(0.1)  # Pour rendre la progression visible
 
-# Réinitialisation
-st.divider()
-if st.button("♻️ Réinitialiser tout"):
-    st.session_state.clear()
+    if not annonces:
+        st.warning("Aucune annonce détectée. Vérifiez le format copié.")
+    else:
+        df = pd.DataFrame(annonces)
+        st.success("Parsing terminé avec succès ✅")
+
+        st.subheader("📋 Aperçu du tableau")
+        st.dataframe(df)
+
+        # Export Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name="Annonces")
+        st.download_button("📥 Télécharger en .xlsx", data=output.getvalue(), file_name="annonces_stationf.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
