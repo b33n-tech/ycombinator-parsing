@@ -1,28 +1,39 @@
 import streamlit as st
-import re
 import pandas as pd
+import re
+from io import BytesIO
 
-st.title("📄 LinkedIn - Parser de candidatures")
+st.set_page_config(page_title="Parser Candidatures LinkedIn", layout="wide")
+
+st.title("📄 LinkedIn - Parser multi-pages de candidatures")
 
 st.markdown("""
-Colle ici ton texte brut copié depuis LinkedIn.  
-Chaque annonce doit être **séparée par une ligne vide** (saut de ligne entre deux annonces).
+Colle ici ton texte brut (copié depuis une ou plusieurs pages de LinkedIn).  
+**Chaque annonce doit être séparée par une ligne vide**.
 
-L’outil va extraire automatiquement :
-- ✅ **Nom de l'entreprise**
-- ✅ **Poste**
-- ✅ **Localisation**
-- ✅ **Statut de la candidature**
+Tu peux parser plusieurs pages, elles seront toutes ajoutées dans un tableau final unique.  
+L’outil va extraire :
+
+- ✅ Nom de l'entreprise  
+- ✅ Poste  
+- ✅ Localisation  
+- ✅ Statut complet (ex: "Candidature déposée il y a 3 j")  
+- ✅ Tag automatique : "Candidature déposée", "CV téléchargé" ou "Candidature vue"
+
+---
 """)
 
-input_text = st.text_area("✂️ Texte brut LinkedIn :", height=300)
+if "candidatures" not in st.session_state:
+    st.session_state["candidatures"] = []
 
-if st.button("🔍 Lancer le parsing"):
+input_text = st.text_area("📋 Colle ici une page de candidatures :", height=300)
+
+if st.button("➕ Ajouter cette page"):
     if not input_text.strip():
         st.warning("Merci de coller du texte avant de parser.")
     else:
-        annonces = re.split(r"\n\s*\n", input_text.strip())  # Sépare par sauts de ligne multiples
-        rows = []
+        annonces = re.split(r"\n\s*\n", input_text.strip())
+        page_rows = []
 
         for annonce in annonces:
             lignes = [line.strip() for line in annonce.strip().split("\n") if line.strip()]
@@ -31,27 +42,55 @@ if st.button("🔍 Lancer le parsing"):
                 entreprise = lignes[0]
                 poste = lignes[1]
                 localisation = ""
-                statut = ""
+                statut_complet = ""
+                tag = ""
 
-                # On cherche automatiquement la ligne avec "Sur site", "Hybride", etc.
                 for ligne in lignes:
                     if re.search(r"(Sur site|Hybride|Remote|Paris|Lyon|Area)", ligne, re.IGNORECASE):
                         localisation = ligne
                     if "Candidature" in ligne or "CV téléchargé" in ligne:
-                        statut = ligne
+                        statut_complet = ligne
+                        if ligne.startswith("Candidature déposée"):
+                            tag = "Candidature déposée"
+                        elif ligne.startswith("CV téléchargé"):
+                            tag = "CV téléchargé"
+                        elif ligne.startswith("Candidature vue"):
+                            tag = "Candidature vue"
 
-                rows.append({
+                page_rows.append({
                     "Entreprise": entreprise,
                     "Poste": poste,
                     "Localisation": localisation,
-                    "Statut": statut
+                    "Statut": statut_complet,
+                    "Tag": tag
                 })
 
-        if rows:
-            df = pd.DataFrame(rows)
-            st.success(f"{len(df)} candidatures extraites avec succès !")
-            st.dataframe(df, use_container_width=True)
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Télécharger le CSV", data=csv, file_name="candidatures_parsées.csv", mime="text/csv")
+        if page_rows:
+            st.session_state["candidatures"].extend(page_rows)
+            st.success(f"{len(page_rows)} candidatures ajoutées.")
         else:
-            st.warning("Aucune donnée extraite. Vérifie que les annonces sont bien séparées par une ligne vide.")
+            st.warning("Aucune annonce valide détectée. Vérifie le format.")
+
+# Affichage du tableau cumulé
+if st.session_state["candidatures"]:
+    st.markdown("---")
+    st.subheader("🧾 Tableau cumulé des candidatures")
+    df = pd.DataFrame(st.session_state["candidatures"])
+    st.dataframe(df, use_container_width=True)
+
+    # Export XLSX
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Candidatures")
+    output.seek(0)
+
+    st.download_button(
+        label="📥 Télécharger en .xlsx",
+        data=output,
+        file_name="candidatures_linkedin.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    if st.button("🗑️ Réinitialiser tout"):
+        st.session_state["candidatures"] = []
+        st.success("Toutes les candidatures ont été supprimées.")
