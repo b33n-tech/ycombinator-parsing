@@ -28,7 +28,6 @@ def to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='Startups')
-        writer.save()
     processed_data = output.getvalue()
     return processed_data
 
@@ -38,7 +37,6 @@ if input_text:
         df = pd.DataFrame(startups)
         st.dataframe(df)
 
-        # Générer le fichier Excel
         excel_data = to_excel(df)
 
         st.download_button(
