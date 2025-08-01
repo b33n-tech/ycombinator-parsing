@@ -27,8 +27,7 @@ with st.form("field_definition_form"):
 def find_matching_field(line, field_configs):
     for config in field_configs:
         for example in config["examples"]:
-            # Simple comparaison de mots ou structure, peut être remplacée par NLP
-            if example and example in line:
+            if example and example.lower() in line.lower():
                 return config["name"]
     return None
 
@@ -46,35 +45,34 @@ if submitted:
 
         for line in lines:
             matched_field = find_matching_field(line, field_configs)
-            if matched_field and matched_field not in used_fields:
+            if matched_field:
+                if matched_field in used_fields:
+                    parsed_rows.append(current_row)
+                    current_row = {config["name"]: "" for config in field_configs}
+                    used_fields = set()
                 current_row[matched_field] = line
                 used_fields.add(matched_field)
-            elif len(used_fields) == len(field_configs):
-                parsed_rows.append(current_row)
-                current_row = {config["name"]: "" for config in field_configs}
-                used_fields = set()
-                matched_field = find_matching_field(line, field_configs)
-                if matched_field:
-                    current_row[matched_field] = line
-                    used_fields.add(matched_field)
 
         if any(v != "" for v in current_row.values()):
             parsed_rows.append(current_row)
 
-        df = pd.DataFrame(parsed_rows)
-        st.success(f"✅ {len(df)} entrées détectées.")
-        st.dataframe(df, use_container_width=True)
+        if parsed_rows:
+            df = pd.DataFrame(parsed_rows)
+            st.success(f"✅ {len(df)} entrées détectées.")
+            st.dataframe(df, use_container_width=True)
 
-        def convert_df_to_excel(df):
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Projets')
-            return output.getvalue()
+            def convert_df_to_excel(df):
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Projets')
+                return output.getvalue()
 
-        excel_data = convert_df_to_excel(df)
-        st.download_button(
-            label="📥 Télécharger en Excel",
-            data=excel_data,
-            file_name="projets_parsés.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            excel_data = convert_df_to_excel(df)
+            st.download_button(
+                label="📥 Télécharger en Excel",
+                data=excel_data,
+                file_name="projets_parsés.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.warning("Aucune donnée identifiable à parser. Veuillez ajuster vos exemples ou votre texte.")
