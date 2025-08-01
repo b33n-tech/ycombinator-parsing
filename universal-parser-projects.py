@@ -44,7 +44,7 @@ if st.button("Lancer le parsing"):
     if not raw_text or not categories or not examples:
         st.error("Veuillez remplir tous les champs nécessaires.")
     else:
-        # Construction des regex dynamiques à partir des exemples
+        # Découper le texte en blocs sur les lignes vides
         lines = raw_text.splitlines()
 
         blocks = []
@@ -59,6 +59,7 @@ if st.button("Lancer le parsing"):
         if block:
             blocks.append("\n".join(block))
 
+        # Construire le DataFrame
         df = pd.DataFrame(columns=categories)
 
         for b in blocks:
@@ -78,8 +79,7 @@ if st.button("Lancer le parsing"):
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False, sheet_name='Parsed')
-            writer.save()
-            processed_data = output.getvalue()
+        processed_data = output.getvalue()
 
         st.download_button(
             label="📥 Télécharger le fichier Excel",
