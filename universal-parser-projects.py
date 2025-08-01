@@ -3,78 +3,87 @@ import pandas as pd
 import re
 from io import BytesIO
 
-st.title("🧠 Universal Project Parser — Version guidée")
-st.markdown("Créez votre propre schéma de parsing en fournissant les catégories et des exemples pour chacune.")
+st.set_page_config(page_title="Universal Project Parser", layout="wide")
+st.title("🧠 Universal Project Parser")
 
-st.header("🛠️ Étape 1 — Définir les catégories")
+st.markdown("""
+Cet outil vous permet de parser un texte brut copié depuis un site web listant des projets, en extrayant automatiquement les informations selon les exemples que vous fournissez.
 
-num_fields = st.number_input("Combien de types d'information voulez-vous extraire ?", min_value=1, max_value=10, value=3)
+### Étapes :
+1. Définissez les catégories d'information souhaitées (ex : Nom du projet, Pitch, Tags, Date, etc.).
+2. Donnez pour chaque catégorie **un exemple précis**.
+3. Copiez-collez l'ensemble du texte brut contenant plusieurs projets.
+4. L'outil applique la logique aux blocs similaires.
+5. Téléchargez le tableau `.xlsx` généré.
+""")
 
-field_configs = []
-field_keys = [f"field_{i}" for i in range(num_fields)]
+# Step 1: Définition des catégories
+st.subheader("1. Définir les catégories et exemples")
+category_count = st.number_input("Combien de types d'information voulez-vous extraire ?", min_value=1, max_value=10, value=3, step=1)
 
-with st.form("field_definition_form"):
-    for i, key in enumerate(field_keys):
-        st.subheader(f"Catégorie #{i+1}")
-        name = st.text_input(f"Nom de la catégorie {i+1}", key=f"name_{key}")
-        ex1 = st.text_input(f"Exemple 1", key=f"ex1_{key}")
-        ex2 = st.text_input(f"Exemple 2", key=f"ex2_{key}")
-        ex3 = st.text_input(f"Exemple 3", key=f"ex3_{key}")
-        field_configs.append({"name": name, "examples": [ex1, ex2, ex3]})
+categories = []
+examples = []
 
-    submitted = st.form_submit_button("✅ Confirmer les catégories")
+for i in range(category_count):
+    col1, col2 = st.columns(2)
+    with col1:
+        category = st.text_input(f"Nom de la catégorie #{i+1}", key=f"cat_{i}")
+    with col2:
+        example = st.text_input(f"Exemple correspondant à cette catégorie", key=f"ex_{i}")
+    if category and example:
+        categories.append(category.strip())
+        examples.append(example.strip())
 
-# Fonction de détection par similarité naïve
-def find_matching_field(line, field_configs):
-    for config in field_configs:
-        for example in config["examples"]:
-            if example and example.lower() in line.lower():
-                return config["name"]
-    return None
+# Step 2: Texte complet à parser
+st.subheader("2. Copier-coller le texte contenant tous les projets")
+raw_text = st.text_area("Texte brut copié depuis un site web", height=400)
 
-if submitted:
-    st.success("Catégories enregistrées. Passez à l'étape suivante.")
+# Step 3: Lancer le parsing
+st.subheader("3. Résultat et export")
+if st.button("Lancer le parsing"):
+    if not raw_text or not categories or not examples:
+        st.error("Veuillez remplir tous les champs nécessaires.")
+    else:
+        # Construction des regex dynamiques à partir des exemples
+        lines = raw_text.splitlines()
 
-    st.header("📋 Étape 2 — Coller le texte à parser")
-    raw_text = st.text_area("Texte à analyser", height=400)
-
-    if st.button("🚀 Lancer le parsing") and raw_text:
-        lines = [l.strip() for l in raw_text.strip().split("\n") if l.strip()]
-        parsed_rows = []
-        current_row = {config["name"]: "" for config in field_configs}
-
+        blocks = []
+        block = []
         for line in lines:
-            matched_field = find_matching_field(line, field_configs)
-            if matched_field:
-                # Si la case est vide, on ajoute
-                if current_row[matched_field] == "":
-                    current_row[matched_field] = line
+            if line.strip() == "":
+                if block:
+                    blocks.append("\n".join(block))
+                    block = []
+            else:
+                block.append(line.strip())
+        if block:
+            blocks.append("\n".join(block))
+
+        df = pd.DataFrame(columns=categories)
+
+        for b in blocks:
+            row = {}
+            for cat, ex in zip(categories, examples):
+                pattern = re.escape(ex)
+                match = re.search(pattern, b, flags=re.IGNORECASE)
+                if match:
+                    row[cat] = match.group()
                 else:
-                    # Sinon on considère que c'est un nouveau projet
-                    parsed_rows.append(current_row)
-                    current_row = {config["name"]: "" for config in field_configs}
-                    current_row[matched_field] = line
+                    row[cat] = ""
+            df.loc[len(df)] = row
 
-        if any(v != "" for v in current_row.values()):
-            parsed_rows.append(current_row)
+        st.dataframe(df)
 
-        if parsed_rows:
-            df = pd.DataFrame(parsed_rows)
-            st.success(f"✅ {len(df)} entrées détectées.")
-            st.dataframe(df, use_container_width=True)
+        # Export as XLSX
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Parsed')
+            writer.save()
+            processed_data = output.getvalue()
 
-            def convert_df_to_excel(df):
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df.to_excel(writer, index=False, sheet_name='Projets')
-                return output.getvalue()
-
-            excel_data = convert_df_to_excel(df)
-            st.download_button(
-                label="📥 Télécharger en Excel",
-                data=excel_data,
-                file_name="projets_parsés.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.warning("Aucune entrée détectée. Veuillez vérifier vos exemples et votre texte.")
+        st.download_button(
+            label="📥 Télécharger le fichier Excel",
+            data=processed_data,
+            file_name="parsed_projects.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
