@@ -44,7 +44,7 @@ if uploaded_file:
 
         for tag_label, keywords in tags_config:
             result_df[tag_label] = col_to_check.apply(
-                lambda text: any(kw in text for kw in keywords)
+                lambda text: 1 if any(kw in text for kw in keywords) else 0
             )
 
         st.success("Tags appliqués avec succès 🎉")
