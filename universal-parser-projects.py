@@ -1,3 +1,21 @@
+import streamlit as st
+import pandas as pd
+import re
+from io import BytesIO
+
+st.set_page_config(page_title="Parser par Modèle de Séquence", layout="wide")
+st.title("Parser universel par Modèle de Séquence")
+
+st.markdown("""
+## Mode d'emploi
+
+1. Indiquez les catégories que vous souhaitez extraire (ex : Année, Startup, Taille équipe)  
+2. Dans la zone \"Modèle de fiche projet\", copiez la séquence des catégories dans l’ordre, en respectant la mise en forme exacte (retours à la ligne, espacements, etc). Par exemple :
+
+[Année]
+[Startup]
+
+[taille équipe]
 
 3. Collez ensuite le texte complet avec toutes les fiches projet à parser (bloc brut, plusieurs fiches à la suite).  
 4. Lancez le parsing et téléchargez le tableau généré.
@@ -15,7 +33,7 @@ if not all(categories):
 
 # --- Step 2 : modèle de fiche projet (avec les tags entre crochets) ---
 st.subheader("2. Modèle de fiche projet")
-st.markdown("Reproduisez la séquence des catégories entre crochets, dans l’ordre, avec la mise en forme exacte, par ex :\n\n```\n[Année]\n[Startup]\n\n[taille équipe]\n```")
+st.markdown("Reproduisez la séquence des catégories entre crochets, dans l’ordre, avec la mise en forme exacte, par ex :\n\n[Année]\n[Startup]\n\n[taille équipe]\n")
 model_text = st.text_area("Modèle de fiche projet (avec les catégories entre crochets)", height=200)
 if not model_text.strip():
     st.warning("Merci de saisir le modèle de fiche projet.")
@@ -40,17 +58,10 @@ def escape_special_regex_chars(text):
     return re.escape(text).replace("\\[", "[").replace("\\]", "]")
 
 # Construire une regex à partir du modèle
-# Le modèle contient des tags [Categorie], on va les remplacer par des groupes regex capturant les valeurs
-# On capture tout ce qui est entre les tags, en mode "non gourmand" (.*?)
-# Exemple : modèle "[Année]\n[Startup]" => regex qui capture un groupe après [Année], puis un groupe après [Startup]
-
 def build_regex_from_model(model, categories):
-    # On va remplacer chaque tag [Catégorie] par un groupe capturant (.+?) qui capture au moins un caractère (lazy)
-    # Entre les tags, on garde la mise en forme exacte (retours ligne, espaces)
     regex = escape_special_regex_chars(model)
     for cat in categories:
         regex = regex.replace(f"[{cat}]", f"(?P<{cat}>.+?)")
-    # Ajouter re.DOTALL pour que '.' capture les sauts de ligne
     return regex
 
 regex_pattern = build_regex_from_model(model_text, categories)
@@ -61,7 +72,6 @@ except Exception as e:
     st.error(f"Erreur dans la compilation de la regex : {e}")
     st.stop()
 
-# Trouver toutes les correspondances dans le texte complet
 matches = list(compiled_re.finditer(full_text))
 
 if not matches:
