@@ -1,82 +1,75 @@
 import streamlit as st
 import re
 import pandas as pd
+from io import BytesIO
 
-st.title("Parser startup avec découpage par ligne de tour de levée")
+st.title("Parser startup avec séparation par ligne vide avant chaque startup")
 
-input_text = st.text_area("Colle ici ton contenu", height=400)
+input_text = st.text_area("Colle ici ton contenu startup brut", height=400)
 
-# Pattern pour détecter la ligne tour de levée
-round_pattern = re.compile(r"^(Seed Round|Seed|Series [A-Z]|Angel|Pre-Seed|Bridge|IPO|Debt)( in \d{4})?$", re.MULTILINE)
+def insert_empty_line_before_startup_name(text):
+    lines = text.splitlines()
+    round_pattern = re.compile(r"^(Seed Round|Seed|Series [A-Z]|Angel|Pre-Seed|Bridge|IPO|Debt)( in \d{4})?$")
+    
+    # Trouver index des lignes noms startup (juste avant ligne tour)
+    name_indexes = []
+    for i, line in enumerate(lines):
+        if round_pattern.match(line):
+            name_idx = i - 1
+            if name_idx >= 0:
+                name_indexes.append(name_idx)
 
-def preprocess_text(text):
-    # On insère un séparateur '===STARTUP===' avant chaque ligne qui correspond au tour de levée
-    # (on fait ça en remplaçant "\n(LIGNE)" par "\n===STARTUP===\nLIGNE")
-    def replacer(match):
-        return "\n===STARTUP===\n" + match.group(0)
-    new_text = round_pattern.sub(replacer, text)
-    # Il est possible que la première startup ne commence pas avec ce séparateur, on ajoute en début
-    if not new_text.startswith("===STARTUP==="):
-        new_text = "===STARTUP===\n" + new_text
-    return new_text
+    # Insérer ligne vide avant chaque nom startup sauf le premier
+    for idx in reversed(name_indexes[1:]):
+        lines.insert(idx, "")
 
-def parse_blocks(text):
-    # On split sur '===STARTUP==='
-    blocks = text.split("===STARTUP===")
+    return "\n".join(lines)
+
+def parse_startups(text):
+    # Split sur lignes vides (blanches) pour isoler chaque startup
+    blocks = [block.strip() for block in re.split(r"\n\s*\n", text) if block.strip()]
     startups = []
+    round_pattern = re.compile(r"^(Seed Round|Seed|Series [A-Z]|Angel|Pre-Seed|Bridge|IPO|Debt)( in \d{4})?$")
+    
     for block in blocks:
-        block = block.strip()
-        if not block:
-            continue
         lines = block.splitlines()
-        # On cherche la ligne qui est le tour de levée (censée être la première ligne)
-        round_line = lines[0].strip()
-        # Le nom de la startup est la ligne juste avant (dans le texte original), donc ici ce sera la ligne avant cette ligne dans le bloc original
-        # Mais ici on a split donc on peut supposer que le nom est la ligne juste avant cette ligne (mais ça n’existe pas dans le block)
-        # Donc on va supposer que dans chaque block, le tour est la 1ère ligne, et le nom est la ligne juste avant dans le texte original (donc on doit modifier un peu la logique)
-        # Alternative simple: le nom est la ligne juste avant la ligne du tour, donc en prétraitement on ajoute le séparateur une ligne avant le tour et une ligne avant le nom
-
-        # Vu que c'est compliqué, on va considérer que dans le block, la première ligne est le tour, la deuxième est le pitch et qu’avant, dans le texte, on a une ligne nom de startup
-
-        # Donc on récupère nom startup dans la dernière ligne avant ce block (donc il faut modifier le pré-traitement)
-
-        # Simplifions : on considère que le bloc contient : 
-        # ligne 0 = tour de levée
-        # ligne 1 = nom startup
-        # ligne 2 et + = pitch
-
-        if len(lines) < 2:
-            continue  # pas assez d'infos
-
-        round_line = lines[0].strip()
-        name_line = lines[1].strip()
-        pitch = " ".join(line.strip() for line in lines[2:]).strip()
-
+        # On doit avoir au moins 2 lignes : nom startup + tour de levée + pitch (au moins 1 ligne)
+        if len(lines) < 3:
+            continue
+        name = lines[0].strip()
+        round_line = lines[1].strip()
+        pitch = " ".join(line.strip() for line in lines[2:])
+        
+        # Vérifier que la 2e ligne correspond bien au tour
+        if not round_pattern.match(round_line):
+            # Si non, on essaie d'inverser nom et tour (au cas où)
+            if round_pattern.match(name):
+                # Inverser
+                name, round_line = round_line, name
+            else:
+                # Ligne tour non détectée => on skip ce block
+                continue
+        
         startups.append({
-            "Startup": name_line,
+            "Startup": name,
             "Tour de levée": round_line,
             "Pitch": pitch
         })
     return startups
 
+def to_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Startups')
+    return output.getvalue()
+
 if input_text:
-    processed_text = preprocess_text(input_text)
-    startups = parse_blocks(processed_text)
+    processed_text = insert_empty_line_before_startup_name(input_text)
+    startups = parse_startups(processed_text)
 
     if startups:
         df = pd.DataFrame(startups)
         st.dataframe(df)
-
-        # Ajout bouton de téléchargement Excel
-        from io import BytesIO
-        import pandas as pd
-
-        def to_excel(df):
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='Startups')
-            processed_data = output.getvalue()
-            return processed_data
 
         excel_data = to_excel(df)
 
@@ -87,4 +80,4 @@ if input_text:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
-        st.warning("Aucune startup détectée. Vérifie le format.")
+        st.warning("Aucune startup détectée. Vérifie le format du texte collé.")
